@@ -37,6 +37,8 @@ subprojects {
         maven("https://repo.papermc.io/repository/maven-public/")
         maven("https://jitpack.io")
         maven("https://repo.codemc.org/repository/maven-public")
+        maven("https://repo.codemc.io/repository/maven-releases/")
+        maven("https://repo.codemc.io/repository/maven-snapshots/")
     }
 
     tasks.compileJava {

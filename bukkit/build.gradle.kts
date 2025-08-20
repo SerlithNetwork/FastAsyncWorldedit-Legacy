@@ -28,6 +28,7 @@ dependencies {
     compileOnly("com.sk89q.worldedit:worldedit-core:6.1.4-SNAPSHOT")
     compileOnly("com.thevoxelbox.voxelsniper:voxelsniper:5.171.0")
     compileOnly("net.dmulloy2:ProtocolLib:5.3.0")
+    compileOnly("com.github.retrooper:packetevents-spigot:2.9.3")
     compileOnly("com.wasteofplastic:askyblock:3.0.9.4")
     compileOnly("org.primesoft:BlocksHub:2.0")
     compileOnly("org.inventivetalent:mapmanager:1.7.2-SNAPSHOT") {
