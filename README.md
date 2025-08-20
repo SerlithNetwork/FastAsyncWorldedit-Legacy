@@ -40,6 +40,7 @@ Not likely to be added anytime soon:
 1. ~~Either bundle `WorldEdit` or just change the download link.~~ ✅
 2. Use a slightly more updated `WorldEdit` version like 6.1.9 🕒
 3. Fix [chunk duplication](https://www.youtube.com/watch?v=hdEVYZ8DWEs) error 🕒
+4. Drop ProtocolLib in favor of packetevents
 
 ## Links 
 

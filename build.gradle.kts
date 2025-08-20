@@ -6,7 +6,7 @@ plugins {
 // delete("target")
 
 group = "com.boydti.fawe"
-version = "1.0.1-legacy-6.1.7.2" // FAWE version - Edition - WE version
+version = "1.0.0-legacy-6.1.7.2" // FAWE version - Edition - WE version
 
 subprojects {
     apply(plugin = "java")
@@ -32,7 +32,6 @@ subprojects {
         maven("https://repo.spongepowered.org/maven")
         maven("https://repo.inventivetalent.org/content/groups/public/")
         maven("https://store.ttyh.ru/libraries/")
-        maven("https://repo.dmulloy2.net/nexus/repository/public/")
         maven("https://maven.elmakers.com/repository/")
         maven("https://ci.ender.zone/plugin/repository/everything/")
         maven("https://repo.papermc.io/repository/maven-public/")
