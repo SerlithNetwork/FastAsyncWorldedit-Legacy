@@ -1,7 +1,5 @@
 package com.boydti.fawe.util;
 
-import sun.misc.Unsafe;
-
 import java.lang.invoke.MethodHandles;
 import java.lang.reflect.*;
 import java.util.ArrayList;
@@ -84,10 +82,12 @@ public class ReflectionUtils9 {
     }
 
     public static Object makeEnum(Class<?> enumClass, String value, int ordinal) throws Exception {
-        Constructor<?> constructor = Unsafe.class.getDeclaredConstructors()[0];
+        if (!enumClass.isEnum()) {
+            throw new IllegalArgumentException("Class must be an enum type");
+        }
+        Constructor<?> constructor = enumClass.getDeclaredConstructor(String.class, int.class);
         constructor.setAccessible(true);
-        Unsafe unsafe = (Unsafe) constructor.newInstance();
-        Object instance = unsafe.allocateInstance(enumClass);
+        Object instance = constructor.newInstance(value, ordinal);
 
         Field ordinalField = Enum.class.getDeclaredField("ordinal");
         setFailsafeFieldValue(ordinalField, instance, 0);
