@@ -48,4 +48,8 @@ public interface VirtualWorld extends SimpleWorld, FaweQueue, Closeable {
     default void handleBlockInteract(Player player, Vector pos, BlockInteractEvent event) {}
 
     default void handlePlayerInput(Player player, PlayerInputEvent event) {}
+
+    default boolean isMutable() {
+        return false;
+    }
 }

@@ -2265,4 +2265,10 @@ public class HeightMapMCAGenerator extends MCAWriter implements StreamChange, Dr
         if (player != null) return player.getWorld().getWorldData();
         return null;
     }
+
+    @Override
+    public boolean isMutable() {
+        return true;
+    }
+
 }

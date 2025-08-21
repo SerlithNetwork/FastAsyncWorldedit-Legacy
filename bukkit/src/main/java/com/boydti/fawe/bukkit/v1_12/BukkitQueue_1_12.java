@@ -16,10 +16,6 @@ import com.boydti.fawe.object.brush.visualization.VisualChunk;
 import com.boydti.fawe.object.queue.LazyFaweChunk;
 import com.boydti.fawe.object.visitor.FaweChunkVisitor;
 import com.boydti.fawe.util.*;
-import com.comphenix.protocol.PacketType;
-import com.comphenix.protocol.ProtocolLibrary;
-import com.comphenix.protocol.ProtocolManager;
-import com.comphenix.protocol.injector.netty.WirePacket;
 import com.sk89q.jnbt.CompoundTag;
 import com.sk89q.jnbt.StringTag;
 import com.sk89q.jnbt.Tag;
@@ -533,34 +529,6 @@ public class BukkitQueue_1_12 extends BukkitQueue_0<net.minecraft.server.v1_12_R
         net.minecraft.server.v1_12_R1.Chunk chunk = getCachedChunk(getWorld(), x, z);
         if (chunk != null) {
             sendChunk(getPlayerChunk((WorldServer) chunk.getWorld(), chunk.locX, chunk.locZ), chunk, bitMask);
-        }
-    }
-
-    @Override
-    public void sendChunkUpdatePLIB(FaweChunk chunk, FawePlayer... players) {
-        PlayerChunkMap playerManager = ((CraftWorld) getWorld()).getHandle().getPlayerChunkMap();
-        ProtocolManager manager = ProtocolLibrary.getProtocolManager();
-        WirePacket packet = null;
-        for (int i = 0; i < players.length; i++) {
-            CraftPlayer bukkitPlayer = ((CraftPlayer) ((BukkitPlayer) players[i]).parent);
-            EntityPlayer player = bukkitPlayer.getHandle();
-
-            if (playerManager.a(player, chunk.getX(), chunk.getZ())) {
-                if (packet == null) {
-                    byte[] data;
-                    byte[] buffer = new byte[8192];
-                    if (chunk instanceof LazyFaweChunk) {
-                        chunk = (FaweChunk) chunk.getChunk();
-                    }
-                    if (chunk instanceof MCAChunk) {
-                        data = new MCAChunkPacket((MCAChunk) chunk, true, true, hasSky()).apply(buffer);
-                    } else {
-                        data = new FaweChunkPacket(chunk, true, true, hasSky()).apply(buffer);
-                    }
-                    packet = new WirePacket(PacketType.Play.Server.MAP_CHUNK, data);
-                }
-                manager.sendWirePacket(bukkitPlayer, packet);
-            }
         }
     }
 

@@ -172,7 +172,7 @@ public class FaweBukkit implements IFawe, Listener {
     @Override
     public void registerPacketListener() {
         PluginManager manager = Bukkit.getPluginManager();
-        if (packetListener == null && manager.getPlugin("ProtocolLib") != null) {
+        if (packetListener == null && manager.getPlugin("packetevents") != null) {
             packetListener = new CFIPacketListener(plugin);
         }
     }

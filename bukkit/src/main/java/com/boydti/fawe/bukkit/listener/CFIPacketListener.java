@@ -2,25 +2,24 @@ package com.boydti.fawe.bukkit.listener;
 
 import com.boydti.fawe.FaweCache;
 import com.boydti.fawe.command.CFICommands;
-import com.boydti.fawe.object.FaweChunk;
-import com.boydti.fawe.object.FawePlayer;
-import com.boydti.fawe.object.FaweQueue;
-import com.boydti.fawe.object.RunnableVal3;
+import com.boydti.fawe.object.*;
 import com.boydti.fawe.object.brush.visualization.VirtualWorld;
 import com.boydti.fawe.util.SetQueue;
-import com.comphenix.protocol.PacketType;
-import com.comphenix.protocol.ProtocolLibrary;
-import com.comphenix.protocol.ProtocolManager;
-import com.comphenix.protocol.events.ListenerPriority;
-import com.comphenix.protocol.events.PacketAdapter;
-import com.comphenix.protocol.events.PacketContainer;
-import com.comphenix.protocol.events.PacketEvent;
-import com.comphenix.protocol.injector.netty.WirePacket;
-import com.comphenix.protocol.reflect.StructureModifier;
-import com.comphenix.protocol.wrappers.BlockPosition;
-import com.comphenix.protocol.wrappers.ChunkCoordIntPair;
-import com.comphenix.protocol.wrappers.EnumWrappers;
-import com.comphenix.protocol.wrappers.WrappedBlockData;
+import com.github.retrooper.packetevents.PacketEvents;
+import com.github.retrooper.packetevents.event.PacketListener;
+import com.github.retrooper.packetevents.event.PacketListenerPriority;
+import com.github.retrooper.packetevents.event.PacketReceiveEvent;
+import com.github.retrooper.packetevents.event.PacketSendEvent;
+import com.github.retrooper.packetevents.manager.player.PlayerManager;
+import com.github.retrooper.packetevents.protocol.packettype.PacketType;
+import com.github.retrooper.packetevents.protocol.player.InteractionHand;
+import com.github.retrooper.packetevents.protocol.world.BlockFace;
+import com.github.retrooper.packetevents.util.Vector3i;
+import com.github.retrooper.packetevents.wrapper.play.client.WrapperPlayClientPlayerBlockPlacement;
+import com.github.retrooper.packetevents.wrapper.play.client.WrapperPlayClientPlayerDigging;
+import com.github.retrooper.packetevents.wrapper.play.client.WrapperPlayClientTeleportConfirm;
+import com.github.retrooper.packetevents.wrapper.play.client.WrapperPlayClientUseItem;
+import com.github.retrooper.packetevents.wrapper.play.server.*;
 import com.sk89q.worldedit.EditSession;
 import com.sk89q.worldedit.Vector;
 import com.sk89q.worldedit.WorldEdit;
@@ -29,10 +28,7 @@ import com.sk89q.worldedit.blocks.BaseBlock;
 import com.sk89q.worldedit.event.platform.BlockInteractEvent;
 import com.sk89q.worldedit.event.platform.Interaction;
 import com.sk89q.worldedit.extension.platform.PlatformManager;
-import java.lang.reflect.InvocationTargetException;
-import java.util.List;
 import org.bukkit.Location;
-import org.bukkit.Material;
 import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.Listener;
@@ -40,6 +36,7 @@ import org.bukkit.event.player.PlayerTeleportEvent;
 import org.bukkit.inventory.ItemStack;
 import org.bukkit.inventory.PlayerInventory;
 import org.bukkit.plugin.Plugin;
+import org.jetbrains.annotations.NotNull;
 
 /**
  * The CFIPacketListener handles packets for editing the VirtualWorld
@@ -47,168 +44,45 @@ import org.bukkit.plugin.Plugin;
  *  - The virtual world is displayed inside the current world
  *  - Block/Chunk/Movement packets need to be handled properly
  */
-public class CFIPacketListener implements Listener {
+public class CFIPacketListener implements Listener, PacketListener {
 
-    private final Plugin plugin;
-    private final ProtocolManager protocolmanager;
+    private final PlayerManager playerManager = PacketEvents.getAPI().getPlayerManager();
+
+    private final RunnableVal3<Player, VirtualWorld, Vector> runnableBlockDig = new RunnableVal3<Player, VirtualWorld, Vector>() {
+        @Override
+        public void run(Player player, VirtualWorld gen, Vector pt) {
+            try {
+                if (!sendBlockChange(player, gen, pt, Interaction.HIT)) {
+                    gen.setBlock(pt, EditSession.nullBlock);
+                }
+            } catch (WorldEditException e) {
+                e.printStackTrace();
+            }
+        }
+    };
+    private final RunnableVal5<Player, InteractionHand, Vector3i, VirtualWorld, Vector> runnableBlockPlace = new RunnableVal5<Player, InteractionHand, Vector3i, VirtualWorld, Vector>() {
+        @Override
+        public void run(Player player, InteractionHand interactionHand, Vector3i pos, VirtualWorld gen, Vector pt) {
+            try {
+                PlayerInventory inv = player.getInventory();
+                ItemStack hand = interactionHand == InteractionHand.MAIN_HAND ? inv.getItemInHand() : inv.getItemInOffHand();
+                if (hand != null && hand.getType().isBlock() && hand.getTypeId() != 0) {
+                    BaseBlock block = FaweCache.getBlock(hand.getTypeId(), hand.getDurability());
+                    gen.setBlock(pt, block);
+                } else {
+                    pt = getRelPos(pos, gen);
+                    sendBlockChange(player, gen, pt, Interaction.OPEN);
+                }
+            } catch (WorldEditException e) {
+                e.printStackTrace();
+            }
+        }
+    };
+    private final Runnable runnableDoNothing = () -> {};
 
     public CFIPacketListener(Plugin plugin) {
-        this.plugin = plugin;
-        this.protocolmanager = ProtocolLibrary.getProtocolManager();
-
-        // Direct digging to the virtual world
-        registerBlockEvent(PacketType.Play.Client.BLOCK_DIG, false, new RunnableVal3<PacketEvent, VirtualWorld, Vector>() {
-            @Override
-            public void run(PacketEvent event, VirtualWorld gen, Vector pt) {
-                try {
-                    Player plr = event.getPlayer();
-                    Vector realPos = pt.add(gen.getOrigin());
-                    if (!sendBlockChange(plr, gen, pt, Interaction.HIT)) {
-                        gen.setBlock(pt, EditSession.nullBlock);
-                    }
-                } catch (WorldEditException e) {
-                    e.printStackTrace();
-                }
-            }
-        });
-
-        // Direct placing to the virtual world
-        RunnableVal3<PacketEvent, VirtualWorld, Vector> placeTask = new RunnableVal3<PacketEvent, VirtualWorld, Vector>() {
-            @Override
-            public void run(PacketEvent event, VirtualWorld gen, Vector pt) {
-                try {
-                    Player plr = event.getPlayer();
-                    List<EnumWrappers.Hand> hands = event.getPacket().getHands().getValues();
-
-                    EnumWrappers.Hand enumHand = hands.isEmpty() ? EnumWrappers.Hand.MAIN_HAND : hands.get(0);
-                    PlayerInventory inv = plr.getInventory();
-                    ItemStack hand = enumHand == EnumWrappers.Hand.MAIN_HAND ? inv.getItemInMainHand() : inv.getItemInOffHand();
-                    if (hand != null && hand.getType().isBlock() && hand.getTypeId() != 0) {
-                        BaseBlock block = FaweCache.getBlock(hand.getTypeId(), hand.getDurability());
-                        gen.setBlock(pt, block);
-                    } else {
-                        pt = getRelPos(event, gen);
-                        sendBlockChange(plr, gen, pt, Interaction.OPEN);
-                    }
-                } catch (WorldEditException e) {
-                    e.printStackTrace();
-                }
-            }
-        };
-        registerBlockEvent(PacketType.Play.Client.BLOCK_PLACE, true, placeTask);
-        registerBlockEvent(PacketType.Play.Client.USE_ITEM, true, placeTask);
-
-        // Cancel block change packets where the real world overlaps with the virtual one
-        registerBlockEvent(PacketType.Play.Server.BLOCK_CHANGE, false, new RunnableVal3<PacketEvent, VirtualWorld, Vector>() {
-            @Override
-            public void run(PacketEvent event, VirtualWorld gen, Vector pt) {
-                // Do nothing
-            }
-        });
-
-        // Modify chunk packets where the real world overlaps with the virtual one
-        protocolmanager.addPacketListener(new PacketAdapter(plugin, ListenerPriority.NORMAL, PacketType.Play.Server.MAP_CHUNK) {
-            @Override
-            public void onPacketSending(PacketEvent event) {
-                if (!event.isServerPacket()) return;
-
-                VirtualWorld gen = getGenerator(event);
-                if (gen != null) {
-                    Vector origin = gen.getOrigin();
-                    PacketContainer packet = event.getPacket();
-                    StructureModifier<Integer> ints = packet.getIntegers();
-                    int cx = ints.read(0);
-                    int cz = ints.read(1);
-
-                    int ocx = origin.getBlockX() >> 4;
-                    int ocz = origin.getBlockZ() >> 4;
-
-                    if (gen.contains(new Vector((cx - ocx) << 4, 0, (cz - ocz) << 4))) {
-                        event.setCancelled(true);
-
-                        Player plr = event.getPlayer();
-
-                        FaweQueue queue = SetQueue.IMP.getNewQueue(plr.getWorld().getName(), true, false);
-
-                        FaweChunk toSend = gen.getSnapshot(cx - ocx, cz - ocz);
-                        toSend.setLoc(gen, cx, cz);
-                        queue.sendChunkUpdate(toSend, FawePlayer.wrap(plr));
-                    }
-                }
-            }
-        });
-
-        // The following few listeners are to ignore block collisions where the virtual and real world overlap
-
-        protocolmanager.addPacketListener(new PacketAdapter(plugin, ListenerPriority.NORMAL, PacketType.Play.Server.ENTITY_VELOCITY) {
-            @Override
-            public void onPacketSending(PacketEvent event) {
-                if (!event.isServerPacket()) return;
-
-                Player player = event.getPlayer();
-                Location pos = player.getLocation();
-                VirtualWorld gen = getGenerator(event);
-                if (gen != null) {
-                    Vector origin = gen.getOrigin();
-                    Vector pt = new Vector(pos.getBlockX(), pos.getBlockY(), pos.getBlockZ());
-
-                    StructureModifier<Integer> ints = event.getPacket().getIntegers();
-                    int id = ints.read(0);
-                    int mx = ints.read(1);
-                    int my = ints.read(2);
-                    int mz = ints.read(3);
-
-                    if (gen.contains(pt.subtract(origin)) && mx == 0 && my == 0 && mz == 0) {
-                        event.setCancelled(true);
-                    }
-                }
-            }
-        });
-
-        protocolmanager.addPacketListener(new PacketAdapter(plugin, ListenerPriority.NORMAL, PacketType.Play.Server.POSITION) {
-            @Override
-            public void onPacketSending(PacketEvent event) {
-                if (!event.isServerPacket()) return;
-
-                Player player = event.getPlayer();
-                Location pos = player.getLocation();
-                VirtualWorld gen = getGenerator(event);
-                if (gen != null) {
-                    Vector origin = gen.getOrigin();
-                    Vector from = new Vector(pos.getBlockX(), pos.getBlockY(), pos.getBlockZ());
-
-                    PacketContainer packet = event.getPacket();
-                    StructureModifier<Double> doubles = packet.getDoubles();
-                    Vector to = new Vector(doubles.read(0), doubles.read(1), doubles.read(2));
-                    if (gen.contains(to.subtract(origin)) && from.distanceSq(to) < 8) {
-                        int id = packet.getIntegers().read(0);
-                        PacketContainer reply = new PacketContainer(PacketType.Play.Client.TELEPORT_ACCEPT);
-                        reply.getIntegers().write(0, id);
-                        protocolmanager.receiveClientPacket(player, reply);
-                        event.setCancelled(true);
-                    }
-                }
-            }
-        });
-
-        protocolmanager.addPacketListener(new PacketAdapter(plugin, ListenerPriority.NORMAL, PacketType.Play.Server.MULTI_BLOCK_CHANGE) {
-            @Override
-            public void onPacketSending(PacketEvent event) {
-                if (!event.isServerPacket()) return;
-
-                VirtualWorld gen = getGenerator(event);
-                if (gen != null) {
-                    PacketContainer packet = event.getPacket();
-                    ChunkCoordIntPair chunk = packet.getChunkCoordIntPairs().read(0);
-                    Vector origin = gen.getOrigin();
-                    int cx = chunk.getChunkX() - (origin.getBlockX() >> 4);
-                    int cz = chunk.getChunkZ() - (origin.getBlockX() >> 4);
-                    if (gen.contains(new Vector(cx << 4, 0, cz << 4))) {
-                        event.setCancelled(true);
-                    }
-                }
-            }
-        });
+        plugin.getServer().getPluginManager().registerEvents(this, plugin);
+        PacketEvents.getAPI().getEventManager().registerListener(this, PacketListenerPriority.NORMAL);
     }
 
     @EventHandler
@@ -242,17 +116,10 @@ public class CFIPacketListener implements Listener {
     }
 
     private void sendBlockChange(Player plr, Vector pt, BaseBlock block) {
-        PacketContainer container = new PacketContainer(PacketType.Play.Server.BLOCK_CHANGE);
+        WrapperPlayServerBlockChange wrapper = new WrapperPlayServerBlockChange(new Vector3i(pt.getBlockX(), pt.getBlockY(), pt.getBlockZ()), block.getId());
         // Block position
         // block combined id
-        container.getBlockPositionModifier().write(0, new BlockPosition(pt.getBlockX(), pt.getBlockY(), pt.getBlockZ()));
-        WrappedBlockData bd = WrappedBlockData.createData(Material.getMaterial(block.getId()), block.getData());
-        container.getBlockData().write(0, bd);
-        protocolmanager.sendWirePacket(plr, WirePacket.fromPacket(container));
-    }
-
-    private VirtualWorld getGenerator(PacketEvent event) {
-        return getGenerator(event.getPlayer());
+        this.playerManager.sendPacket(plr, wrapper);
     }
 
     private VirtualWorld getGenerator(Player player) {
@@ -266,50 +133,135 @@ public class CFIPacketListener implements Listener {
         return null;
     }
 
-    private Vector getRelPos(PacketEvent event, VirtualWorld generator) {
-        PacketContainer packet = event.getPacket();
-        StructureModifier<BlockPosition> position = packet.getBlockPositionModifier();
-        BlockPosition loc = position.readSafely(0);
-        if (loc == null) return null;
+    private Vector getRelPos(Vector3i position, VirtualWorld generator) {
+        if (position == null) return null;
         Vector origin = generator.getOrigin();
-        Vector pt = new Vector(loc.getX() - origin.getBlockX(), loc.getY() - origin.getBlockY(), loc.getZ() - origin.getBlockZ());
-        return pt;
+        return new Vector(position.getX() - origin.getBlockX(), position.getY() - origin.getBlockY(), position.getZ() - origin.getBlockZ());
     }
 
-    private void handleBlockEvent(PacketEvent event, boolean relative, RunnableVal3<PacketEvent, VirtualWorld, Vector> task) {
-        VirtualWorld gen = getGenerator(event);
-        if (gen != null) {
-            Vector pt = getRelPos(event, gen);
+    private boolean handleBlockEvent(Player player, InteractionHand hand, Vector3i position, BlockFace face, boolean relative, Runnable task) {
+        VirtualWorld gen = getGenerator(player);
+        if (gen != null && gen.isMutable()) {
+            Vector pt = getRelPos(position, gen);
             if (pt != null) {
-                if (relative) pt = getRelative(event, pt);
+                if (relative) pt = getRelative(face, pt);
                 if (gen.contains(pt)) {
+                    if (task instanceof RunnableVal3<?,?,?>) {
+                        RunnableVal3<Player, VirtualWorld, Vector> runnable = (RunnableVal3<Player, VirtualWorld, Vector>) task;
+                        runnable.run(player, gen, pt);
+                    } else if (task instanceof RunnableVal5<?,?,?,?,?>) {
+                        RunnableVal5<Player, InteractionHand, Vector3i, VirtualWorld, Vector> runnable = (RunnableVal5<Player, InteractionHand, Vector3i, VirtualWorld, Vector>) task;
+                        runnable.run(player, hand, position, gen, pt);
+                    }
+                    return false;
+                }
+            }
+        }
+        return true;
+    }
+
+    @Override
+    public void onPacketReceive(@NotNull PacketReceiveEvent event) {
+        if (event.isCancelled()) return;
+        if (event.getPacketType() == PacketType.Play.Client.PLAYER_DIGGING) {
+            WrapperPlayClientPlayerDigging wrapper = new WrapperPlayClientPlayerDigging(event);
+            if (!this.handleBlockEvent(event.getPlayer(), null, wrapper.getBlockPosition(), wrapper.getBlockFace(), false, this.runnableBlockDig)) {
+                event.setCancelled(true);
+            }
+        } else if (event.getPacketType() == PacketType.Play.Client.PLAYER_BLOCK_PLACEMENT) {
+            WrapperPlayClientPlayerBlockPlacement wrapper = new WrapperPlayClientPlayerBlockPlacement(event);
+            if (!this.handleBlockEvent(event.getPlayer(), wrapper.getHand(), wrapper.getBlockPosition(), wrapper.getFace(), true, this.runnableBlockPlace)) {
+                event.setCancelled(true);
+            }
+        } else if (event.getPacketType() == PacketType.Play.Client.USE_ITEM) {
+            WrapperPlayClientUseItem wrapper = new WrapperPlayClientUseItem(event);
+            if (!this.handleBlockEvent(event.getPlayer(), wrapper.getHand(), wrapper.readBlockPosition(), BlockFace.OTHER, true, this.runnableBlockPlace)) {
+                event.setCancelled(true);
+            }
+        }
+    }
+
+    @Override
+    public void onPacketSend(@NotNull PacketSendEvent event) {
+        if (event.isCancelled()) return;
+        if (event.getPacketType() == PacketType.Play.Server.BLOCK_CHANGE) {
+            WrapperPlayServerBlockChange wrapper = new WrapperPlayServerBlockChange(event);
+            if (!this.handleBlockEvent(event.getPlayer(), null, wrapper.getBlockPosition(), BlockFace.OTHER, false, this.runnableDoNothing)) {
+                event.setCancelled(true);
+            }
+        } else if (event.getPacketType() == PacketType.Play.Server.MAP_CHUNK_BULK) {
+            WrapperPlayServerChunkDataBulk wrapper = new WrapperPlayServerChunkDataBulk(event);
+            int[] chunksX = wrapper.getX();
+            int[] chunksZ = wrapper.getZ();
+            for (int i = 0; i < chunksX.length; i++) {
+                VirtualWorld gen = this.getGenerator(event.getPlayer());
+                if (gen != null) {
+                    Vector origin = gen.getOrigin();
+                    int cx = chunksX[i];
+                    int cz = chunksZ[i];
+
+                    int ocx = origin.getBlockX() >> 4;
+                    int ocz = origin.getBlockZ() >> 4;
+
+                    if (gen.contains(new Vector((cx - ocx) << 4, 0, (cz - ocz) << 4))) {
+                        event.setCancelled(true);
+
+                        Player plr = event.getPlayer();
+
+                        FaweQueue queue = SetQueue.IMP.getNewQueue(plr.getWorld().getName(), true, false);
+
+                        FaweChunk<?> toSend = gen.getSnapshot(cx - ocx, cz - ocz);
+                        toSend.setLoc(gen, cx, cz);
+                        queue.sendChunkUpdate(toSend, FawePlayer.wrap(plr));
+                    }
+                }
+            }
+        } else if (event.getPacketType() == PacketType.Play.Server.ENTITY_VELOCITY) {
+            Player player = event.getPlayer();
+            VirtualWorld gen = this.getGenerator(event.getPlayer());
+            if (gen != null) {
+                WrapperPlayServerEntityVelocity wrapper = new WrapperPlayServerEntityVelocity(event);
+                Location pos = player.getLocation();
+                Vector origin = gen.getOrigin();
+                Vector pt = new Vector(pos.getBlockX(), pos.getBlockY(), pos.getBlockZ());
+                Vector3i velocity = wrapper.getVelocity().toVector3i();
+                if (gen.contains(pt.subtract(origin)) && velocity.getX() == 0 && velocity.getY() == 0 && velocity.getZ() == 0) {
                     event.setCancelled(true);
-                    task.run(event, gen, pt);
+                }
+            }
+        } else if (event.getPacketType() == PacketType.Play.Server.PLAYER_POSITION_AND_LOOK) {
+            Player player = event.getPlayer();
+            VirtualWorld gen = getGenerator(player);
+            if (gen != null) {
+                WrapperPlayServerPlayerPositionAndLook wrapper = new WrapperPlayServerPlayerPositionAndLook(event);
+                Location pos = player.getLocation();
+                Vector origin = gen.getOrigin();
+                Vector from = new Vector(pos.getBlockX(), pos.getBlockY(), pos.getBlockZ());
+                Vector to = new Vector(wrapper.getX(), wrapper.getY(), wrapper.getZ());
+                if (gen.contains(to.subtract(origin)) && from.distanceSq(to) < 8) {
+                    WrapperPlayClientTeleportConfirm reply = new WrapperPlayClientTeleportConfirm(player.getEntityId());
+                    this.playerManager.receivePacket(player, reply);
+                    event.setCancelled(true);
+                }
+            }
+        } else if (event.getPacketType() == PacketType.Play.Server.MULTI_BLOCK_CHANGE) {
+            VirtualWorld gen = getGenerator(event.getPlayer());
+            if (gen != null) {
+                WrapperPlayServerMultiBlockChange wrapper = new WrapperPlayServerMultiBlockChange(event);
+                Vector3i chunk = wrapper.getChunkPosition();
+                Vector origin = gen.getOrigin();
+                int cx = chunk.getX() - (origin.getBlockX() >> 4);
+                int cz = chunk.getZ() - (origin.getBlockX() >> 4);
+                if (gen.contains(new Vector(cx << 4, 0, cz << 4))) {
+                    event.setCancelled(true);
                 }
             }
         }
     }
 
-    private void registerBlockEvent(PacketType type, boolean relative, RunnableVal3<PacketEvent, VirtualWorld, Vector> task) {
-        protocolmanager.addPacketListener(new PacketAdapter(plugin, ListenerPriority.NORMAL, type) {
-            @Override
-            public void onPacketReceiving(final PacketEvent event) {
-                if (type.isClient() || event.isServerPacket()) handleBlockEvent(event, relative, task);
-            }
-
-            @Override
-            public void onPacketSending(PacketEvent event) {
-                onPacketReceiving(event);
-            }
-        });
-    }
-
-    private Vector getRelative(PacketEvent container, Vector pt) {
-        PacketContainer packet = container.getPacket();
-        StructureModifier<EnumWrappers.Direction> dirs = packet.getDirections();
-        EnumWrappers.Direction dir = dirs.readSafely(0);
-        if (dir == null) return pt;
-        switch (dir.ordinal()) {
+    private Vector getRelative(BlockFace face, Vector pt) {
+        if (face == null) return pt;
+        switch (face.ordinal()) {
             case 0: return pt.add(0, -1, 0);
             case 1: return pt.add(0, 1, 0);
             case 2: return pt.add(0, 0, -1);

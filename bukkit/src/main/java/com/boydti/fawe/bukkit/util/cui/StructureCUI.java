@@ -1,25 +1,19 @@
 package com.boydti.fawe.bukkit.util.cui;
 
 import com.boydti.fawe.FaweCache;
-import com.boydti.fawe.bukkit.v0.BukkitQueue_0;
 import com.boydti.fawe.object.FawePlayer;
 import com.boydti.fawe.util.cui.CUI;
-import com.comphenix.protocol.PacketType;
-import com.comphenix.protocol.ProtocolLibrary;
-import com.comphenix.protocol.ProtocolManager;
-import com.comphenix.protocol.events.PacketContainer;
-import com.comphenix.protocol.injector.PacketConstructor;
-import com.comphenix.protocol.wrappers.BlockPosition;
-import com.comphenix.protocol.wrappers.nbt.NbtBase;
-import com.comphenix.protocol.wrappers.nbt.NbtCompound;
-import com.comphenix.protocol.wrappers.nbt.NbtFactory;
+import com.github.retrooper.packetevents.PacketEvents;
+import com.github.retrooper.packetevents.manager.player.PlayerManager;
+import com.github.retrooper.packetevents.protocol.nbt.*;
+import com.github.retrooper.packetevents.protocol.world.blockentity.BlockEntityTypes;
+import com.github.retrooper.packetevents.util.Vector3i;
+import com.github.retrooper.packetevents.wrapper.play.server.WrapperPlayServerBlockEntityData;
+import com.github.retrooper.packetevents.wrapper.play.server.WrapperPlayServerEntityStatus;
 import com.sk89q.worldedit.Vector;
 import com.sk89q.worldedit.internal.cui.CUIEvent;
 import com.sk89q.worldedit.internal.cui.SelectionPointEvent;
 import com.sk89q.worldedit.internal.cui.SelectionShapeEvent;
-import java.lang.reflect.InvocationTargetException;
-import java.util.HashMap;
-import java.util.Map;
 import java.util.UUID;
 import org.bukkit.Bukkit;
 import org.bukkit.Location;
@@ -34,8 +28,10 @@ public class StructureCUI extends CUI {
     private Vector pos2;
 
     private Vector remove;
-    private NbtCompound removeTag;
+    private NBTCompound removeTag;
     private int combined;
+
+    private final PlayerManager playerManager = PacketEvents.getAPI().getPlayerManager();
 
     public StructureCUI(FawePlayer player) {
         super(player);
@@ -78,55 +74,43 @@ public class StructureCUI extends CUI {
         update();
     }
 
-    private NbtCompound constructStructureNbt(int x, int y, int z, int posX, int posY, int posZ, int sizeX, int sizeY, int sizeZ) {
-        HashMap<String, Object> tag = new HashMap<>();
-        tag.put("name", UUID.randomUUID().toString());
-        tag.put("author", "Empire92"); // :D
-        tag.put("metadata", "");
-        tag.put("x", x);
-        tag.put("y", y);
-        tag.put("z", z);
-        tag.put("posX", posX);
-        tag.put("posY", posY);
-        tag.put("posZ", posZ);
-        tag.put("sizeX", sizeX);
-        tag.put("sizeY", sizeY);
-        tag.put("sizeZ", sizeZ);
-        tag.put("rotation", "NONE");
-        tag.put("mirror", "NONE");
-        tag.put("mode", "SAVE");
-        tag.put("ignoreEntities", true);
-        tag.put("powered", false);
-        tag.put("showair", false);
-        tag.put("showboundingbox", true);
-        tag.put("integrity", 1.0f);
-        tag.put("seed", 0);
-        tag.put("id", "minecraft:structure_block");
-        Object nmsTag = BukkitQueue_0.fromNative(FaweCache.asTag(tag));
-        return NbtFactory.fromNMSCompound(nmsTag);
+    private NBTCompound constructStructureNbt(int x, int y, int z, int posX, int posY, int posZ, int sizeX, int sizeY, int sizeZ) {
+        NBTCompound tag = new NBTCompound();
+        tag.setTag("name", new NBTString(UUID.randomUUID().toString()));
+        tag.setTag("author", new NBTString("Empire92")); // :D
+        tag.setTag("metadata", new NBTString(""));
+        tag.setTag("x", new NBTInt(x));
+        tag.setTag("y", new NBTInt(y));
+        tag.setTag("z", new NBTInt(z));
+        tag.setTag("posX", new NBTInt(posX));
+        tag.setTag("posY", new NBTInt(posY));
+        tag.setTag("posZ", new NBTInt(posZ));
+        tag.setTag("sizeX", new NBTInt(sizeX));
+        tag.setTag("sizeY", new NBTInt(sizeY));
+        tag.setTag("sizeZ", new NBTInt(sizeZ));
+        tag.setTag("rotation", new NBTString("NONE"));
+        tag.setTag("mirror", new NBTString("NONE"));
+        tag.setTag("mode", new NBTString("SAVE"));
+        tag.setTag("ignoreEntities", new NBTByte(true));
+        tag.setTag("powered", new NBTByte(false));
+        tag.setTag("showair", new NBTByte(false));
+        tag.setTag("showboundingbox", new NBTByte(true));
+        tag.setTag("integrity", new NBTFloat(1.0f));
+        tag.setTag("seed", new NBTInt(0));
+        tag.setTag("id", new NBTString("minecraft:structure_block"));
+        return tag;
     }
 
     private void sendOp() {
         Player player = this.<Player>getPlayer().parent;
-        ProtocolManager manager = ProtocolLibrary.getProtocolManager();
-
-        PacketConstructor statusCtr = manager.createPacketConstructor(PacketType.Play.Server.ENTITY_STATUS, player, (byte) 28);
-        PacketContainer status = statusCtr.createPacket(player, (byte) 28);
-
-        manager.sendServerPacket(player, status);
+        WrapperPlayServerEntityStatus packet = new WrapperPlayServerEntityStatus(player.getEntityId(), (byte) 28);
+        this.playerManager.sendPacket(player, packet);
     }
 
-    private void sendNbt(Vector pos, NbtCompound compound) {
+    private void sendNbt(Vector pos, NBTCompound compound) {
         Player player = this.<Player>getPlayer().parent;
-        ProtocolManager manager = ProtocolLibrary.getProtocolManager();
-
-        PacketContainer blockNbt = new PacketContainer(PacketType.Play.Server.TILE_ENTITY_DATA);
-        blockNbt.getBlockPositionModifier().write(0, new BlockPosition(pos.getBlockX(), pos.getBlockY(), pos.getBlockZ()));
-        blockNbt.getIntegers().write(0, 7);
-        blockNbt.getNbtModifier().write(0, compound);
-
-
-        manager.sendServerPacket(player, blockNbt);
+        WrapperPlayServerBlockEntityData packet = new WrapperPlayServerBlockEntityData(new Vector3i(pos.getBlockX(), pos.getBlockY(), pos.getBlockZ()), BlockEntityTypes.BED, compound);
+        this.playerManager.sendPacket(player, packet);
     }
 
     public synchronized void update() {
@@ -138,8 +122,7 @@ public class StructureCUI extends CUI {
             int cz = playerLoc.getBlockZ() >> 4;
             int viewDistance = viewDistance();
             if (Math.abs(cx - (remove.getBlockX() >> 4)) <= viewDistance && Math.abs(cz - (remove.getBlockZ() >> 4)) <= viewDistance) {
-                Map<String, NbtBase<?>> map = removeTag.getValue();
-                map.put("sizeX", NbtFactory.of("sizeX", 0));
+                removeTag.setTag("sizeX", new NBTInt(0));
                 sendNbt(remove, removeTag);
                 Location removeLoc = new Location(player.getWorld(), remove.getX(), remove.getY(), remove.getZ());
                 player.sendBlockChange(removeLoc, FaweCache.getId(combined), (byte) FaweCache.getData(combined));
@@ -173,7 +156,7 @@ public class StructureCUI extends CUI {
         int posZ = Math.max(minZ, Math.min(16, maxZ) - 32);
 
         // NBT
-        NbtCompound compound = constructStructureNbt(x, y, z, posX, posY, posZ, sizeX, sizeY, sizeZ);
+        NBTCompound compound = constructStructureNbt(x, y, z, posX, posY, posZ, sizeX, sizeY, sizeZ);
 
         Block block = player.getWorld().getBlockAt(x, y, z);
         remove = new Vector(x, y, z);
