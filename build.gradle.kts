@@ -22,7 +22,6 @@ subprojects {
     repositories {
         mavenCentral()
         mavenLocal()
-        maven("https://repo.dmulloy2.net/repository/public")
         maven("https://repo.destroystokyo.com/repository/maven-public//")
         maven("https://ci.athion.net/plugin/repository/tools/")
         maven("https://hub.spigotmc.org/nexus/content/groups/public/")
