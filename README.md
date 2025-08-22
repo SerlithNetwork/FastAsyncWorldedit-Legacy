@@ -13,6 +13,7 @@ It is available for Bukkit, Forge, Sponge and Nukkit.
 ## Additions
 * [Java 17 compatibility](https://github.com/DawningW/FastAsyncWorldedit-Legacy/commit/41c4ef8c245b4a8cf212606a00e6d093a47a9b6d)
 * [Ytnoos security patch](https://github.com/ytnoos/FastAsyncWorldedit-Legacy/commit/12a01983c9650e4b1a4dbd067344d88cd89be1b1)
+* [Samsuik chunk corruption fix](https://github.com/Samsuik/FastAsyncWorldedit-Legacy/commit/68539824759d51ef5896f0168363bf47a0768d6b)
 
 ## Installation
 Drop the FAWE jar in your `/plugins` folder and install [WorldEdit 6.1.7.2](https://dev.bukkit.org/projects/worldedit/files/2431372). \
@@ -38,9 +39,9 @@ These builds **can now be found** at `/bukkit/build/libs/` as Gradle standard.
 ## TODO
 Not likely to be added anytime soon:
 1. ~~Either bundle `WorldEdit` or just change the download link.~~ ✅
-2. Use a slightly more updated `WorldEdit` version like 6.1.9 🕒
-3. Fix [chunk duplication](https://www.youtube.com/watch?v=hdEVYZ8DWEs) error 🕒
-4. Drop ProtocolLib in favor of packetevents
+2. Use a slightly more updated `WorldEdit` version like 6.1.9 🕒 (Probably not going to do this)
+3. ~~Fix [chunk duplication](https://www.youtube.com/watch?v=hdEVYZ8DWEs) error 🕒~~ (This can be fixed natively in 1.8 forks in ChunkSection, which doesn't make a copy of the array before using)
+4. ~~Drop ProtocolLib in favor of packetevents~~
 
 ## Links 
 
